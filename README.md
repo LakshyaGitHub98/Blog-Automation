@@ -53,7 +53,7 @@ API on http://localhost:8000. Compose overrides `DATABASE_URL` (Postgres) and
 | Var | Default | Meaning |
 |-----|---------|---------|
 | `LLM_PROVIDER` | `nvidia` | `nvidia` \| `openai` \| `local` |
-| `LLM_MODEL` | `meta/llama-3.3-70b-instruct` | NVIDIA model names change often — check https://build.nvidia.com |
+| `LLM_MODEL` | `deepseek-ai/deepseek-v4-flash` | NVIDIA model names change often — check https://build.nvidia.com |
 | `NVIDIA_API_KEY` | — | key from build.nvidia.com (free credits) |
 | `DATABASE_URL` | empty → SQLite | set for Postgres |
 | `REDIS_URL` | empty → sync mode | set for async Celery |

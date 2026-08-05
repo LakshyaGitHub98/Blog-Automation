@@ -67,9 +67,10 @@ def run_pipeline(post_id, topic, options=None):
     detector = get_detector()
 
     _set_status(post_id, "generating", error="")
+    max_tokens = int(options.get("max_tokens", 4096))
     try:
         draft = llm.complete(
-            DRAFT_SYSTEM, f"Topic: {topic}", temperature=temperature, max_tokens=4096
+            DRAFT_SYSTEM, f"Topic: {topic}", temperature=temperature, max_tokens=max_tokens
         )
     except LLMError as e:
         _set_status(post_id, "failed", error=str(e))
@@ -90,7 +91,7 @@ def run_pipeline(post_id, topic, options=None):
             HUMANIZE_SYSTEM,
             f"Flagged paragraphs:\n{flag_text}\n\nFull post:\n{current}",
             temperature=temperature,
-            max_tokens=4096,
+            max_tokens=max_tokens,
         )
 
     # pick the revision with the lowest (most human) score
@@ -126,21 +127,16 @@ def run_pipeline(post_id, topic, options=None):
     finally:
         db.close()
 
-    post = models.Post(id=post_id)
     db = SessionLocal()
-    try:
-        post = db.get(models.Post, post_id)
-        post.title = extract_title(best[1])
-        post.content = best[1]
-        post.iterations_used = best[0]
-        post.final_score = best[2].score
-        post.detector = best[2].detector
-        post.status = "completed"
-        db.commit()
-    finally:
-        db.close()
-
-    return {
+    post = db.get(models.Post, post_id)
+    post.title = extract_title(best[1])
+    post.content = best[1]
+    post.iterations_used = best[0]
+    post.final_score = best[2].score
+    post.detector = best[2].detector
+    post.status = "completed"
+    db.commit()
+    result = {
         "status": "completed",
         "post_id": post_id,
         "title": post.title,
@@ -149,6 +145,8 @@ def run_pipeline(post_id, topic, options=None):
         "detector": best[2].detector,
         "content": best[1],
     }
+    db.close()
+    return result
 
 
 def _set_status(post_id, status, error=""):

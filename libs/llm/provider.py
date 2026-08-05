@@ -10,7 +10,12 @@ class LLMProvider:
 
     def __init__(self, api_key, base_url, model):
         self.model = model
-        self.client = OpenAI(api_key=api_key or "sk-none", base_url=base_url)
+        self.client = OpenAI(
+            api_key=api_key or "sk-none",
+            base_url=base_url,
+            timeout=900.0,
+            max_retries=2,
+        )
 
     def complete(self, system, user, temperature=0.85, max_tokens=4096):
         resp = self.client.chat.completions.create(

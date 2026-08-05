@@ -19,6 +19,7 @@ class GenerateRequest(BaseModel):
     max_iterations: int | None = Field(default=None, ge=0, le=10)
     threshold: float | None = Field(default=None, ge=0.0, le=1.0)
     temperature: float | None = Field(default=None, ge=0.0, le=2.0)
+    max_tokens: int | None = Field(default=None, ge=50, le=8192)
 
 
 class PostOut(BaseModel):
@@ -56,6 +57,7 @@ def generate(req: GenerateRequest, db: Session = Depends(get_db)):
         "max_iterations": req.max_iterations if req.max_iterations is not None else settings.max_iterations,
         "threshold": req.threshold if req.threshold is not None else settings.threshold,
         "temperature": req.temperature if req.temperature is not None else settings.temperature,
+        "max_tokens": req.max_tokens if req.max_tokens is not None else 4096,
     }
     if enqueue(post.id, req.topic, options):
         return {"request_id": post.id, "status": "queued", "async": True}
@@ -63,7 +65,15 @@ def generate(req: GenerateRequest, db: Session = Depends(get_db)):
     try:
         result = run_pipeline(post.id, req.topic, options)
     except Exception as e:  # noqa: BLE001
-        raise HTTPException(status_code=500, detail=str(e))
+        post = db.get(models.Post, post.id)
+        post.error = str(e)
+        post.status = "failed"
+        db.commit()
+        return {
+            "request_id": post.id,
+            "status": "failed",
+            "error": str(e),
+        }
     return {"request_id": post.id, "status": "completed", "post": result}
 
 

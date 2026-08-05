@@ -102,6 +102,7 @@
   <span class="badge" id="mode-badge">loading…</span>
 </header>
 <main>
+  <div id="list-view">
   <div class="card">
     <h2 style="margin-top:0; font-size:16px;">Generate a blog post</h2>
     <form id="gen-form">
@@ -129,6 +130,9 @@
     <h2 style="margin-top:0; font-size:16px;">Recent posts</h2>
     <div id="posts"></div>
   </div>
+  </div>
+
+  <div id="detail-view" style="display:none"></div>
 </main>
 
 <div id="toast"></div>
@@ -183,23 +187,46 @@
     renderPosts(j.posts);
   }
 
-  window.openPost = async function (id) {
-    location.hash = "#post/" + id;
-    renderDetail(id);
+  window.showList = function () {
+    $("#detail-view").style.display = "none";
+    $("#list-view").style.display = "";
+    loadPosts();
   };
 
-  async function renderDetail(id) {
-    const r = await fetch("/api/posts/" + id);
-    const j = await r.json();
+  window.openPost = async function (id) {
+    $("#list-view").style.display = "none";
+    $("#detail-view").style.display = "";
+    $("#detail-view").innerHTML = '<p style="color:var(--muted)">Loading…</p>';
+    try {
+      const r = await fetch("/api/posts/" + id);
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.detail || "not found");
+      renderDetail(j);
+    } catch (err) {
+      $("#detail-view").innerHTML =
+        '<p style="color:var(--red)">Failed to load: ' + esc(err.message) + "</p>";
+    }
+  };
+
+  function renderDetail(j) {
     const p = j.post;
-    document.querySelector("main").innerHTML = `
-      <a class="back" href="#/">← back to list</a>
+    const revisions = (j.revisions || []).map((rev) => `
+      <div class="rev">
+        <div class="rev-head">
+          <span>iteration ${rev.iteration}</span>
+          <span class="score ${scoreClass(rev.ai_score)}">AI score: ${rev.ai_score == null ? "—" : rev.ai_score} (${rev.detector})</span>
+        </div>
+        <pre>${esc(rev.content)}</pre>
+      </div>`).join("") || '<p style="color:var(--muted)">No revisions.</p>';
+    $("#detail-view").innerHTML = `
+      <a class="back" href="javascript:void(0)" onclick="showList()">← back to list</a>
       <div class="card">
         <div class="meta" style="display:flex; gap:12px; font-size:12px; color:var(--muted); flex-wrap:wrap;">
           <span class="status ${p.status}">${p.status}</span>
           <span class="score ${scoreClass(p.final_score)}">AI score: ${p.final_score == null ? "—" : p.final_score}</span>
           <span>detector: ${p.detector || "—"}</span>
           <span>iterations used: ${p.iterations_used || 0}</span>
+          <span>${new Date(p.created_at).toLocaleString()}</span>
         </div>
         <h2 style="margin-bottom:4px;">${esc(p.title || p.topic)}</h2>
         <p style="color:var(--muted); font-size:13px;">${esc(p.topic)}</p>
@@ -207,14 +234,7 @@
       </div>
       <div class="card">
         <h2 style="margin-top:0; font-size:16px;">Revisions (eval loop)</h2>
-        ${j.revisions.map((rev) => `
-          <div class="rev">
-            <div class="rev-head">
-              <span>iteration ${rev.iteration}</span>
-              <span class="score ${scoreClass(rev.ai_score)}">AI score: ${rev.ai_score == null ? "—" : rev.ai_score} (${rev.detector})</span>
-            </div>
-            <pre>${esc(rev.content)}</pre>
-          </div>`).join("") || '<p style="color:var(--muted)">No revisions.</p>'}
+        ${revisions}
       </div>`;
   }
 
@@ -274,14 +294,7 @@
   async function boot() {
     await loadMode();
     await loadPosts();
-    if (location.hash.startsWith("#/post/")) {
-      renderDetail(location.hash.replace("#/post/", ""));
-    }
   }
-  window.addEventListener("hashchange", () => {
-    if (location.hash.startsWith("#/post/")) renderDetail(location.hash.replace("#/post/", ""));
-    else { location.reload(); }
-  });
   boot();
 </script>
 </body>

@@ -9,7 +9,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 class Settings:
     def __init__(self):
         self.llm_provider = os.getenv("LLM_PROVIDER", "nvidia")
-        self.llm_model = os.getenv("LLM_MODEL", "meta/llama-3.3-70b-instruct")
+        self.llm_model = os.getenv("LLM_MODEL", "deepseek-ai/deepseek-v4-flash")
         self.nvidia_api_key = os.getenv("NVIDIA_API_KEY", "")
         self.openai_api_key = os.getenv("OPENAI_API_KEY", "")
         self.local_base_url = os.getenv("LOCAL_BASE_URL", "http://localhost:11434/v1")
