@@ -8,3 +8,5 @@ detector_results.json
 .DS_Store
 *.egg-info/
 .pytest_cache/
+.server.pid
+check_me.txt

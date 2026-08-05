@@ -17,6 +17,8 @@ class Settings:
         self.temperature = float(os.getenv("LLM_TEMPERATURE", "0.85"))
 
         db_url = os.getenv("DATABASE_URL", "")
+        if db_url.startswith("postgres://"):
+            db_url = db_url.replace("postgres://", "postgresql://", 1)
         self.database_url = (
             db_url
             or "sqlite:///" + os.path.join(BASE_DIR, "blog_gen.db").replace(os.sep, "/")
