@@ -10,7 +10,10 @@ _BUILDERS = {
         settings.groq_api_key, GROQ_BASE_URL, settings.groq_model
     ),
     "nvidia": lambda: LLMProvider(
-        settings.nvidia_api_key, NVIDIA_BASE_URL, settings.nvidia_model
+        settings.nvidia_api_key,
+        NVIDIA_BASE_URL,
+        settings.nvidia_model,
+        timeout=settings.nvidia_timeout_seconds,
     ),
     "openai": lambda: LLMProvider(
         settings.openai_api_key, OPENAI_BASE_URL, settings.llm_model

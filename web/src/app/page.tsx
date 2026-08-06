@@ -60,7 +60,7 @@ function GenerateForm() {
   const [threshold, setThreshold] = useState(0.6);
   const [maxIterations, setMaxIterations] = useState(2);
   const [temperature, setTemperature] = useState(0.85);
-  const [maxTokens, setMaxTokens] = useState("4096");
+  const [maxTokens, setMaxTokens] = useState("2048");
   const [submitting, setSubmitting] = useState(false);
 
   const busy = submitting || polling;
@@ -223,6 +223,12 @@ function GenerateForm() {
             <AlertDescription className="break-words">
               {job.error || "Unknown error"}
             </AlertDescription>
+            {job.error?.toLowerCase().includes("rate limit") && (
+              <AlertDescription className="mt-2">
+                Rate-limited by the provider. Wait about a minute, then hit
+                Generate again — the app already retries automatically.
+              </AlertDescription>
+            )}
           </Alert>
         )}
 

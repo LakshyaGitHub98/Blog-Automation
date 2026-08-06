@@ -41,10 +41,12 @@ class Settings:
         )
         self.threshold = float(os.getenv("HUMANIZE_THRESHOLD", "0.6"))
         self.max_iterations = int(os.getenv("MAX_ITERATIONS", "2"))
-        self.max_tokens = int(os.getenv("MAX_TOKENS", "4096"))
+        self.max_tokens = int(os.getenv("MAX_TOKENS", "2048"))
         self.min_humanize_passes = int(os.getenv("MIN_HUMANIZE_PASSES", "1"))
 
         self.llm_timeout_seconds = float(os.getenv("LLM_TIMEOUT_SECONDS", "30"))
+        self.llm_rate_limit_retries = int(os.getenv("LLM_RATE_LIMIT_RETRIES", "3"))
+        self.nvidia_timeout_seconds = float(os.getenv("NVIDIA_TIMEOUT_SECONDS", "15"))
         self.llm_max_retries = int(os.getenv("LLM_MAX_RETRIES", "0"))
         self.job_stale_seconds = int(os.getenv("JOB_STALE_SECONDS", "900"))
         self.log_level = os.getenv("LOG_LEVEL", "INFO").upper()
