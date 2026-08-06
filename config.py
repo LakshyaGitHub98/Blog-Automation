@@ -40,8 +40,9 @@ class Settings:
             "DETECTOR_RESULTS_PATH", os.path.join(BASE_DIR, "detector_results.json")
         )
         self.threshold = float(os.getenv("HUMANIZE_THRESHOLD", "0.6"))
-        self.max_iterations = int(os.getenv("MAX_ITERATIONS", "1"))
-        self.max_tokens = int(os.getenv("MAX_TOKENS", "2000"))
+        self.max_iterations = int(os.getenv("MAX_ITERATIONS", "2"))
+        self.max_tokens = int(os.getenv("MAX_TOKENS", "4096"))
+        self.min_humanize_passes = int(os.getenv("MIN_HUMANIZE_PASSES", "1"))
 
         self.llm_timeout_seconds = float(os.getenv("LLM_TIMEOUT_SECONDS", "30"))
         self.llm_max_retries = int(os.getenv("LLM_MAX_RETRIES", "0"))

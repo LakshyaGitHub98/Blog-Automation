@@ -44,6 +44,7 @@ class LLMProvider:
                 ],
                 temperature=temperature,
                 max_tokens=max_tokens,
+                timeout=settings.llm_timeout_seconds,
             )
         except Exception as e:
             elapsed = round(time.perf_counter() - start, 1)

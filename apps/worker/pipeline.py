@@ -1,5 +1,6 @@
 import logging
 import re
+import statistics
 from datetime import datetime, timedelta, timezone
 
 from config import settings
@@ -11,29 +12,42 @@ from libs.llm.provider import LLMError, complete_with_failover
 logger = logging.getLogger("blog_gen.pipeline")
 
 DRAFT_SYSTEM = (
-    "You are an expert blog writer. Write a well-structured, engaging blog post. "
-    "Vary your sentence lengths a lot. Use specific, concrete details and natural "
-    "first-person perspective. Use '## ' markdown headings for sections. "
-    "Never write 'In conclusion', never use emojis, avoid dense bullet-point lists. "
-    "Do not mention that you are an AI or a language model."
+    "You are an experienced essayist, not a copywriter. Write a blog post about "
+    "the topic that reads like a real person typed it at a kitchen table.\n"
+    "- Vary sentence lengths dramatically: mix 2-3 word fragments with 25-word "
+    "sentences. Do not keep a steady rhythm.\n"
+    "- Vary paragraph lengths: some paragraphs 1-2 sentences, others 5-7.\n"
+    "- Use concrete, specific detail and a genuine first-person voice, including "
+    "small unpolished observations.\n"
+    "- Use '## ' markdown headings for a few sections.\n"
+    "- Banned: no emojis; at most one em-dash (—) per paragraph; never write "
+    "'In conclusion', 'Furthermore', 'Moreover', 'Additionally', 'delve', "
+    "'navigate', 'landscape', 'leverage', 'in today's world', 'it's important "
+    "to note', 'at the end of the day'. Avoid dense bullet-point lists. Never "
+    "mention that you are an AI or a language model."
 )
 
 HUMANIZE_SYSTEM = (
-    "You are an expert editor who rewrites machine-written text so it reads like it "
-    "was written naturally by a person. Rewrite the full post.\n"
-    "- Vary sentence lengths dramatically: mix short, punchy sentences with long, "
-    "flowing ones. Do not keep sentences roughly the same length.\n"
-    "- Use natural, specific, occasionally uncommon word choices (concrete nouns, "
-    "vivid verbs). Avoid formulaic AI phrasing like 'in today's fast-paced world', "
-    "'it's important to note', 'delve into'.\n"
-    "- Keep a genuine first-person voice and natural transitions ('honestly', 'in "
-    "practice', 'what surprised me').\n"
-    "- Keep every fact and the overall structure, headings, and topic identical. "
-    "Do NOT invent new facts, stats, or numbers.\n"
-    "- Do not use emojis, do not use heavy bullet lists, never write 'In conclusion' "
-    "or 'To summarize'.\n"
-    "The flagged paragraphs below were detected as too formulaic; make those "
-    "sections the most natural-sounding. Return the complete rewritten post only."
+    "You are a ruthless editor making machine-written text read like it was typed "
+    "by a person, aiming to beat AI detectors. Rewrite the full post.\n"
+    "- Vary sentence lengths dramatically and DELIBERATELY: alternate very short "
+    "sentences (3-6 words) with long ones (20-30 words). Never keep a steady "
+    "rhythm. Short fragments are your friend.\n"
+    "- Vary paragraph lengths: make some paragraphs just 1-2 sentences, others "
+    "5-6. Keep the paragraph breaks (blank lines) — do not merge paragraphs.\n"
+    "- Cut formulaic AI phrases and replace them with plain, specific language. "
+    "Especially remove: 'furthermore', 'moreover', 'additionally', 'delve', "
+    "'navigate', 'landscape', 'leverage', 'in conclusion', 'at the end of the "
+    "day', 'it's important to note', 'in today's world'.\n"
+    "- Reduce em-dashes (—) to at most one per paragraph; replace the rest with "
+    "commas, periods, or a rephrase.\n"
+    "- Keep a personal, honest first-person voice with natural transitions, "
+    "concrete details, contractions, and mild imperfection.\n"
+    "- Keep every fact, the headings, structure, and topic identical. Do NOT "
+    "invent new facts, stats, or numbers.\n"
+    "- No emojis, no heavy bullet lists.\n"
+    "The flagged paragraphs below are the most formulaic; make those sections the "
+    "most natural-sounding. Return the complete rewritten post only."
 )
 
 _HEADING_RE = re.compile(r"^#+\s+(.+)$", re.MULTILINE)
@@ -58,6 +72,46 @@ def extract_title(content):
         return m.group(1).strip()
     plain = re.sub(r"#+", "", (content or "").split("\n")[0]).strip()
     return plain[:80] or "Untitled"
+
+
+_FORMULAIC_SUBSTRINGS = [
+    "in today's",
+    "it's important to note",
+    "it is important to note",
+    "it's worth noting",
+    "furthermore",
+    "moreover",
+    "additionally",
+    "in addition",
+    "delve",
+    "navigate",
+    "leverage",
+    "landscape",
+    "in conclusion",
+    "at the end of the day",
+    "seamless",
+    "empower",
+    "unlock",
+    "game-changer",
+]
+
+
+def detector_hints(text):
+    """Human-readable summary of why the detector thinks text is AI-ish."""
+    hints = []
+    if text.count("\u2014") + text.count("\u2013") >= 2:
+        hints.append("too many em-dashes")
+    low = text.lower()
+    found = [c for c in _FORMULAIC_SUBSTRINGS if c in low]
+    if found:
+        hints.append("formulaic phrases like: " + ", ".join(found[:4]))
+    sents = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text or "") if s.strip()]
+    lens = [len(s.split()) for s in sents]
+    if len(lens) >= 4 and statistics.mean(lens) > 0:
+        cv = statistics.pstdev(lens) / statistics.mean(lens)
+        if cv < 0.5:
+            hints.append("sentence rhythm too uniform")
+    return "; ".join(hints) or "none detected"
 
 
 def cleanup_stale_posts():
@@ -96,6 +150,9 @@ def run_pipeline(post_id, topic, options=None):
     threshold = float(options.get("threshold", settings.threshold))
     temperature = float(options.get("temperature", settings.temperature))
     max_tokens = int(options.get("max_tokens", settings.max_tokens))
+    min_humanize_passes = int(
+        options.get("min_humanize_passes", settings.min_humanize_passes)
+    )
 
     detector = get_detector()
 
@@ -110,6 +167,7 @@ def run_pipeline(post_id, topic, options=None):
         logger.info("post %s | stage=draft done (%d chars)", post_id, len(draft))
 
         current = draft
+        humanized = 0
         for rewrite_count in range(max_iterations + 1):
             _set_status(post_id, "generating", stage="evaluating")
             res = detector.score_text(current)
@@ -121,12 +179,18 @@ def run_pipeline(post_id, topic, options=None):
                 res.score,
                 threshold,
             )
-            if res.score <= threshold:
-                logger.info("post %s | accepted (score <= threshold)", post_id)
-                break
             if rewrite_count >= max_iterations:
                 logger.info("post %s | max iterations reached", post_id)
                 break
+            if res.score <= threshold and humanized >= min_humanize_passes:
+                logger.info("post %s | accepted (score <= threshold)", post_id)
+                break
+            if res.score <= threshold:
+                logger.info(
+                    "post %s | passing but forcing humanize pass %d",
+                    post_id,
+                    humanized + 1,
+                )
 
             flagged = [p["text"] for p in res.paragraphs if p["score"] > threshold][:5]
             flag_text = "\n\n---\n\n".join(flagged) if flagged else "none specifically flagged"
@@ -137,12 +201,21 @@ def run_pipeline(post_id, topic, options=None):
                 rewrite_count,
                 len(flagged),
             )
-            current = complete_with_failover(
+            feedback = (
+                f"Current overall AI-score: {res.score:.2f} "
+                f"(target: <= {threshold}). Main issues detected: {detector_hints(current)}."
+            )
+            new = complete_with_failover(
                 HUMANIZE_SYSTEM,
-                f"Flagged paragraphs:\n{flag_text}\n\nFull post:\n{current}",
+                f"{feedback}\n\nFlagged paragraphs:\n{flag_text}\n\nFull post:\n{current}",
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
+            if not new or new == current:
+                logger.info("post %s | humanize produced no change, stopping", post_id)
+                break
+            current = new
+            humanized += 1
             logger.info("post %s | humanize round=%d done (%d chars)", post_id, rewrite_count, len(current))
 
         best = min(revisions, key=lambda r: r[2].score)
