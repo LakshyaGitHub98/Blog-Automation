@@ -10,3 +10,4 @@ detector_results.json
 .pytest_cache/
 .server.pid
 check_me.txt
+logs/

@@ -52,21 +52,29 @@ API on http://localhost:8000. Compose overrides `DATABASE_URL` (Postgres) and
 
 | Var | Default | Meaning |
 |-----|---------|---------|
-| `LLM_PROVIDER` | `nvidia` | `nvidia` \| `openai` \| `local` |
-| `LLM_MODEL` | `deepseek-ai/deepseek-v4-flash` | NVIDIA model names change often — check https://build.nvidia.com |
-| `NVIDIA_API_KEY` | — | key from build.nvidia.com (free credits) |
+| `LLM_PROVIDER` | `groq` | `groq` \| `nvidia` \| `openai` \| `local` (primary) |
+| `GROQ_API_KEY` | — | fast key from console.groq.com (recommended) |
+| `GROQ_MODEL` | `llama-3.3-70b-versatile` | Groq model |
+| `NVIDIA_API_KEY` | — | key from build.nvidia.com (fallback) |
+| `LLM_PROVIDER_PRIORITY` | `groq,nvidia` | provider failover order |
+| `LLM_TIMEOUT_SECONDS` | `30` | max seconds per LLM call before failover |
+| `MAX_ITERATIONS` | `1` | max rewrite passes |
+| `MAX_TOKENS` | `2000` | LLM response cap (~1200-1500 word blog) |
 | `DATABASE_URL` | empty → SQLite | set for Postgres |
-| `REDIS_URL` | empty → sync mode | set for async Celery |
+| `REDIS_URL` | empty → bg thread | set for async Celery |
 | `DETECTOR_MODE` | `mock` | `mock` \| `colab` |
 | `DETECTOR_RESULTS_PATH` | `detector_results.json` | scores from Colab batch |
 | `HUMANIZE_THRESHOLD` | `0.6` | stop when overall AI-score ≤ threshold |
-| `MAX_ITERATIONS` | `3` | max rewrite passes |
+| `JOB_STALE_SECONDS` | `900` | auto-fail queued/generating jobs older than this |
+| `LOG_LEVEL` | `INFO` | `DEBUG` \| `INFO` \| `WARNING` \| `ERROR` |
+| `LOG_FILE` | `logs/app.log` | rotating log file (console + file) |
 
 ## API
 
 - `POST /api/generate` `{"topic": "...", "threshold": 0.6, "max_iterations": 3}`
-  → `{request_id, status}` (async) or full post (sync)
-- `GET /api/status/{id}` — poll while generating
+  → `{request_id, status: queued}` (always async; polls `/api/status` — a background
+  thread runs the pipeline in-process when Redis is not configured)
+- `GET /api/status/{id}` — poll while generating (includes `stage`, `elapsed_seconds`)
 - `GET /api/posts`, `GET /api/posts/{id}` — history + revision scores
 
 ## Detector workflow (self-hosted, no local GPU)

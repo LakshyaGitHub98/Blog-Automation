@@ -1,4 +1,7 @@
+import logging
 import os
+import threading
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
@@ -10,6 +13,8 @@ from apps.worker.pipeline import create_post, run_pipeline
 from config import settings, BASE_DIR
 from db import models
 from db.database import get_db
+
+logger = logging.getLogger("blog_gen.api")
 
 router = APIRouter()
 
@@ -27,6 +32,7 @@ class PostOut(BaseModel):
     topic: str
     title: str
     status: str
+    stage: str
     iterations_used: int
     final_score: float | None
     detector: str
@@ -41,6 +47,7 @@ def _post_out(p: models.Post) -> PostOut:
         topic=p.topic,
         title=p.title,
         status=p.status,
+        stage=p.stage or "",
         iterations_used=p.iterations_used or 0,
         final_score=p.final_score,
         detector=p.detector,
@@ -57,24 +64,30 @@ def generate(req: GenerateRequest, db: Session = Depends(get_db)):
         "max_iterations": req.max_iterations if req.max_iterations is not None else settings.max_iterations,
         "threshold": req.threshold if req.threshold is not None else settings.threshold,
         "temperature": req.temperature if req.temperature is not None else settings.temperature,
-        "max_tokens": req.max_tokens if req.max_tokens is not None else 4096,
+        "max_tokens": req.max_tokens if req.max_tokens is not None else settings.max_tokens,
     }
+    logger.info(
+        "POST /api/generate post=%s options=%s", post.id, options
+    )
     if enqueue(post.id, req.topic, options):
         return {"request_id": post.id, "status": "queued", "async": True}
-    # synchronous mode (no redis) -> run pipeline inline
+    # no redis -> run pipeline on a background thread so the HTTP request
+    # returns instantly; the dashboard polls /api/status for progress.
+    thread = threading.Thread(
+        target=_run_sync_job,
+        args=(post.id, req.topic, options),
+        name=f"pipeline-{post.id[:8]}",
+        daemon=True,
+    )
+    thread.start()
+    return {"request_id": post.id, "status": "queued", "async": True}
+
+
+def _run_sync_job(post_id, topic, options):
     try:
-        result = run_pipeline(post.id, req.topic, options)
+        run_pipeline(post_id, topic, options)
     except Exception as e:  # noqa: BLE001
-        post = db.get(models.Post, post.id)
-        post.error = str(e)
-        post.status = "failed"
-        db.commit()
-        return {
-            "request_id": post.id,
-            "status": "failed",
-            "error": str(e),
-        }
-    return {"request_id": post.id, "status": "completed", "post": result}
+        logger.error("background job %s failed: %s", post_id, e)
 
 
 @router.get("/api/status/{post_id}")
@@ -82,14 +95,22 @@ def status(post_id: str, db: Session = Depends(get_db)):
     post = db.get(models.Post, post_id)
     if not post:
         raise HTTPException(status_code=404, detail="not found")
+    elapsed = None
+    if post.created_at:
+        created = post.created_at
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        elapsed = max(0, round((datetime.now(timezone.utc) - created).total_seconds()))
     return {
         "request_id": post.id,
         "status": post.status,
+        "stage": post.stage or "",
         "error": post.error or "",
         "title": post.title,
         "final_score": post.final_score,
         "iterations_used": post.iterations_used or 0,
         "detector": post.detector,
+        "elapsed_seconds": elapsed,
     }
 
 

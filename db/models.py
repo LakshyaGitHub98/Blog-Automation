@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text, inspect
 from sqlalchemy.orm import relationship
 
 from db.database import Base
@@ -23,6 +23,7 @@ class Post(Base):
     title = Column(Text, default="")
     content = Column(Text, default="")
     status = Column(String(20), default="queued")  # queued|generating|completed|failed
+    stage = Column(String(40), default="queued")  # draft|evaluating|humanizing|saving|done
     iterations_used = Column(Integer, default=0)
     final_score = Column(Float, nullable=True)
     detector = Column(String(20), default="")
@@ -61,3 +62,17 @@ class EvalScore(Base):
     score = Column(Float, nullable=False)
 
     revision = relationship("Revision", back_populates="eval_scores")
+
+
+def ensure_post_stage_column(engine):
+    """Add posts.stage to pre-existing databases (create_all won't alter tables)."""
+    try:
+        insp = inspect(engine)
+        if "posts" in insp.get_table_names():
+            cols = {c["name"] for c in insp.get_columns("posts")}
+            if "stage" not in cols:
+                with engine.begin() as conn:
+                    conn.exec_driver_sql("ALTER TABLE posts ADD COLUMN stage VARCHAR(40) DEFAULT 'queued'")
+    except Exception:  # pragma: no cover - best-effort migration
+        return False
+    return True

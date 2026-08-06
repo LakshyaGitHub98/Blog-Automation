@@ -172,6 +172,7 @@
       <div class="post">
         <div class="meta">
           <span class="status ${p.status}">${p.status}</span>
+          ${p.stage ? `<span>${esc(p.stage)}</span>` : ""}
           <span class="score ${scoreClass(p.final_score)}">AI score: ${p.final_score == null ? "—" : p.final_score}</span>
           <span>detector: ${p.detector || "—"}</span>
           <span>iterations: ${p.iterations_used || 0}</span>
@@ -275,6 +276,7 @@
   let pollTimer = null;
   function poll(id) {
     clearInterval(pollTimer);
+    let lastElapsed = 0;
     pollTimer = setInterval(async () => {
       const r = await fetch("/api/status/" + id);
       const j = await r.json();
@@ -287,6 +289,11 @@
         clearInterval(pollTimer);
         toast("failed: " + (j.error || "unknown error"));
         loadPosts();
+      } else {
+        const st = j.stage || "…";
+        const secs = j.elapsed_seconds || lastElapsed;
+        lastElapsed = secs;
+        toast("working: " + st + " — " + secs + "s");
       }
     }, 2000);
   }
