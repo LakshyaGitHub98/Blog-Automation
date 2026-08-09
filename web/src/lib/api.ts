@@ -47,7 +47,6 @@ export interface GenerateResponse {
 
 export interface GenerateOptions {
   topic: string;
-  threshold?: number;
   max_iterations?: number;
   temperature?: number;
   max_tokens?: number;

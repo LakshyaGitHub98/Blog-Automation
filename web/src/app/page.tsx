@@ -57,8 +57,7 @@ function GenerateForm() {
   const { job, polling, startPolling } = useGeneration();
 
   const [topic, setTopic] = useState("");
-  const [threshold, setThreshold] = useState(0.6);
-  const [maxIterations, setMaxIterations] = useState(2);
+  const [maxIterations, setMaxIterations] = useState(5);
   const [temperature, setTemperature] = useState(0.85);
   const [maxTokens, setMaxTokens] = useState("2048");
   const [submitting, setSubmitting] = useState(false);
@@ -72,7 +71,6 @@ function GenerateForm() {
       try {
         const res = await api.generate({
           topic,
-          threshold,
           max_iterations: maxIterations,
           temperature,
           max_tokens: parseInt(maxTokens, 10),
@@ -85,7 +83,7 @@ function GenerateForm() {
         setSubmitting(false);
       }
     },
-    [topic, threshold, maxIterations, temperature, maxTokens, startPolling]
+    [topic, maxIterations, temperature, maxTokens, startPolling]
   );
 
   const stage = job?.stage ?? "";
@@ -98,7 +96,8 @@ function GenerateForm() {
           Generate a blog post
         </CardTitle>
         <CardDescription>
-          Draft it, score it with the detector, then humanize it until it passes.
+          Draft it, score it with the detector, then rewrite it until the AI
+          score hits 0 (up to your max iterations).
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -117,23 +116,6 @@ function GenerateForm() {
 
           <div className="grid gap-6 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="threshold">
-                AI threshold{" "}
-                <span className="text-muted-foreground tabular-nums">
-                  {threshold.toFixed(2)}
-                </span>
-              </Label>
-              <Slider
-                id="threshold"
-                min={0.3}
-                max={0.8}
-                step={0.05}
-                value={[threshold]}
-                onValueChange={(v) => setThreshold(v[0])}
-                disabled={busy}
-              />
-            </div>
-            <div className="space-y-2">
               <Label htmlFor="iterations">
                 Max humanize iterations{" "}
                 <span className="text-muted-foreground tabular-nums">
@@ -142,7 +124,7 @@ function GenerateForm() {
               </Label>
               <Slider
                 id="iterations"
-                min={0}
+                min={1}
                 max={10}
                 step={1}
                 value={[maxIterations]}
@@ -150,8 +132,8 @@ function GenerateForm() {
                 disabled={busy}
               />
               <p className="text-xs text-muted-foreground">
-                More passes = stronger de-AI signal, but slower. Backend allows up
-                to 10.
+                The pipeline rewrites until the AI-detector score hits 0
+                (up to this cap). More passes = stronger de-AI signal, but slower.
               </p>
             </div>
             <div className="space-y-2">

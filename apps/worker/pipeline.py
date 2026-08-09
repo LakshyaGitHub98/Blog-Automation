@@ -65,6 +65,12 @@ HUMANIZE_SYSTEM = (
 
 _HEADING_RE = re.compile(r"^#+\s+(.+)$", re.MULTILINE)
 
+# The pipeline keeps rewriting until the detector score reaches this literal
+# value. NOTE: the mock detector floors scores at ~0.03, so a target of 0.0 is
+# in practice unreachable and the loop runs for all `max_iterations`, then serves
+# back the best (lowest) revision.
+ZERO_TARGET = 0.0
+
 
 def create_post(topic):
     db = SessionLocal()
@@ -288,12 +294,8 @@ def run_pipeline(post_id, topic, options=None):
     """
     options = options or {}
     max_iterations = int(options.get("max_iterations", settings.max_iterations))
-    threshold = float(options.get("threshold", settings.threshold))
     temperature = float(options.get("temperature", settings.temperature))
     max_tokens = int(options.get("max_tokens", settings.max_tokens))
-    min_humanize_passes = int(
-        options.get("min_humanize_passes", settings.min_humanize_passes)
-    )
 
     detector = get_detector()
 
@@ -333,26 +335,25 @@ def run_pipeline(post_id, topic, options=None):
                     )
             revisions.append((rewrite_count, current, res))
             logger.info(
-                "post %s | eval round=%d overall=%.3f threshold=%.3f",
+                "post %s | eval round=%d overall=%.3f zero_target=%.3f",
                 post_id,
                 rewrite_count,
                 res.score,
-                threshold,
+                ZERO_TARGET,
             )
+            if res.score <= ZERO_TARGET:
+                logger.info("post %s | accepted (score reached zero)", post_id)
+                break
             if rewrite_count >= max_iterations:
                 logger.info("post %s | max iterations reached", post_id)
                 break
-            if res.score <= threshold and humanized >= min_humanize_passes:
-                logger.info("post %s | accepted (score <= threshold)", post_id)
-                break
-            if res.score <= threshold:
-                logger.info(
-                    "post %s | passing but forcing humanize pass %d",
-                    post_id,
-                    humanized + 1,
-                )
 
-            flagged = [p["text"] for p in res.paragraphs if p["score"] > threshold][:5]
+            # Target the most AI-sounding paragraphs each pass so the overall
+            # score keeps dropping toward zero.
+            flagged = [
+                p["text"]
+                for p in sorted(res.paragraphs, key=lambda x: x["score"], reverse=True)
+            ][:5]
             flag_text = "\n\n---\n\n".join(flagged) if flagged else "none specifically flagged"
             _set_status(post_id, "generating", stage="humanizing")
             logger.info(
@@ -363,7 +364,7 @@ def run_pipeline(post_id, topic, options=None):
             )
             feedback = (
                 f"Current overall AI-score: {res.score:.2f} "
-                f"(target: <= {threshold}). Main issues detected: {detector_hints(current)}."
+                f"(target: 0.00). Main issues detected: {detector_hints(current)}."
             )
             new = complete_with_failover(
                 HUMANIZE_SYSTEM,
