@@ -17,6 +17,12 @@ class ColabDetector:
     def __init__(self, results_path):
         self.results_path = results_path
         self._cache = None
+        self._unscored = []
+
+    def unscored_texts(self):
+        """Paragraphs from the last score_text() call that had no Binoculars
+        score in the results file (they fell back to the mock heuristic)."""
+        return self._unscored
 
     def _load(self):
         if self._cache is not None:
@@ -35,9 +41,11 @@ class ColabDetector:
         cache = self._load()
         paras = split_paragraphs(text)
         results = []
+        self._unscored = []
         for p in paras:
             score = cache.get(_text_hash(p))
             if score is None:
+                self._unscored.append(p)
                 sents = _sentences(p)
                 lengths = [len(s.split()) for s in sents]
                 if len(lengths) < 2:

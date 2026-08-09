@@ -92,7 +92,7 @@ flowchart TB
 | **Detector abstraction** | `DetectorClient` interface | Pipeline detector ke saath tightly coupled nahi — `mock` (dev), `colab` (Binoculars batch), `self-hosted GPU` future — sab plug-and-play |
 | **Mock detector** | Burstiness heuristic (pure Python) | GPU ke bina dev/testing. Uniform sentence-length → high AI score; varied → low. Deterministic, loop testable |
 | **Colab detector** | Binoculars (zero-shot) via batch scores | Binoculars best open-source detector hai; free GPU (Colab T4) pe paragraphs score kar ke JSON return |
-| **Dashboard** | Static HTML + vanilla JS | No build step — FastAPI khud serve karta hai. List view + detail view (revisions + scores) |
+| **Dashboard** | Next.js + shadcn/ui (`web/`) | No-docker, modern UI — dev server proxies `/api/*` to the backend |
 | **Config** | `python-dotenv` + `Settings` class | Har jagah kaam karta hai: local `.env`, docker env, Render dashboard env |
 | **Deploy** | Dockerfile + docker-compose + Render | Ek hi image api/worker dono me; local me `start.bat` bina docker ke; Render sync mode single service |
 
@@ -206,7 +206,11 @@ blog-gen/
     binoculars_score.py  # free-GPU batch scorer
   tools/
     benchmark.py         # threshold tuning + false-positive curve
-  static/index.html      # dashboard (list + detail view)
+  web/                   # Next.js + shadcn/ui dashboard (port 3000)
+    app/page.tsx         # generate form + recent posts
+    app/post/[id]/page.tsx  # detail + revisions
+    lib/api.ts           # typed API client
+  static/index.html      # legacy single-file dashboard (optional)
   config.py              # env settings
   Dockerfile, docker-compose.yml, run.py, start.bat, start.sh
 ```

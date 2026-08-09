@@ -16,7 +16,9 @@ class Settings:
         self.groq_model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
         self.openai_api_key = os.getenv("OPENAI_API_KEY", "")
         self.local_base_url = os.getenv("LOCAL_BASE_URL", "http://localhost:11434/v1")
-        self.local_model = os.getenv("LOCAL_MODEL", "qwen2.5:14b")
+        self.local_model = os.getenv("LOCAL_MODEL", "qwen2.5:7b")
+        self.local_timeout_seconds = float(os.getenv("LOCAL_TIMEOUT_SECONDS", "600"))
+        self.local_num_ctx = int(os.getenv("LOCAL_NUM_CTX", "8192"))
         self.temperature = float(os.getenv("LLM_TEMPERATURE", "0.85"))
         # comma-separated list; tried in order on failure/timeout
         self.llm_provider_priority = [

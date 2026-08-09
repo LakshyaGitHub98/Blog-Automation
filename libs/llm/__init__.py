@@ -19,7 +19,11 @@ _BUILDERS = {
         settings.openai_api_key, OPENAI_BASE_URL, settings.llm_model
     ),
     "local": lambda: LLMProvider(
-        "sk-local", settings.local_base_url, settings.local_model
+        "sk-local",
+        settings.local_base_url,
+        settings.local_model,
+        timeout=settings.local_timeout_seconds,
+        extra_body={"options": {"num_ctx": settings.local_num_ctx}},
     ),
 }
 

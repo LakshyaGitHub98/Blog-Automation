@@ -35,11 +35,12 @@ def _retry_after_seconds(err, attempt):
 class LLMProvider:
     """OpenAI-compatible client. Works with OpenAI, NVIDIA NIM, Ollama/vLLM."""
 
-    def __init__(self, api_key, base_url, model, timeout=None):
+    def __init__(self, api_key, base_url, model, timeout=None, extra_body=None):
         self.api_key = api_key
         self.model = model
         self.base_url = base_url
         self.timeout = timeout or settings.llm_timeout_seconds
+        self.extra_body = extra_body
         self.client = OpenAI(
             api_key=api_key or "sk-none",
             base_url=base_url,
@@ -59,6 +60,9 @@ class LLMProvider:
         )
         max_attempts = max(1, settings.llm_rate_limit_retries + 1)
         resp = None
+        kwargs = {}
+        if self.extra_body:
+            kwargs["extra_body"] = self.extra_body
         for attempt in range(1, max_attempts + 1):
             try:
                 resp = self.client.chat.completions.create(
@@ -70,6 +74,7 @@ class LLMProvider:
                     temperature=temperature,
                     max_tokens=max_tokens,
                     timeout=self.timeout,
+                    **kwargs,
                 )
                 break
             except RateLimitError as e:

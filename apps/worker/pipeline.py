@@ -12,39 +12,52 @@ from libs.llm.provider import LLMError, complete_with_failover
 logger = logging.getLogger("blog_gen.pipeline")
 
 DRAFT_SYSTEM = (
-    "You are an experienced essayist, not a copywriter. Write a blog post about "
-    "the topic that reads like a real person typed it at a kitchen table.\n"
+    "You are an experienced essayist writing a polished, professional blog post. "
+    "The writing must read as human-authored and low-scoring against AI detectors: "
+    "genuine voice, irregular rhythm, and zero machine tells.\n"
+    "- Adopt a confident first-person voice with concrete, verifiable detail. Be "
+    "honest and precise; never embellish.\n"
     "- Vary sentence lengths dramatically: mix 2-3 word fragments with 25-word "
     "sentences. Do not keep a steady rhythm.\n"
-    "- Vary paragraph lengths: some paragraphs 1-2 sentences, others 5-7.\n"
-    "- Use concrete, specific detail and a genuine first-person voice, including "
-    "small unpolished observations.\n"
-    "- Use '## ' markdown headings for a few sections.\n"
+    "- Vary paragraph lengths: some paragraphs 1-2 sentences, others 5-7. Use "
+    "'## ' markdown headings for a few sections.\n"
+    "- FACT CHECKING IS MANDATORY: Only state facts, figures, names, and quotes "
+    "that were supplied in the topic or are common knowledge you are certain "
+    "about. If you lack a real number, citation, date, or quote, do NOT invent "
+    "one. No fabricated percentages, prices, statistics, 'studies show', "
+    "'experts say', or unattributed quotes.\n"
     "- Banned: no emojis; at most one em-dash (—) per paragraph; never write "
     "'In conclusion', 'Furthermore', 'Moreover', 'Additionally', 'delve', "
     "'navigate', 'landscape', 'leverage', 'in today's world', 'it's important "
-    "to note', 'at the end of the day'. Avoid dense bullet-point lists. Never "
-    "mention that you are an AI or a language model."
+    "to note', 'at the end of the day', 'as an AI', 'it's no secret', "
+    "'in summary', 'everything you need to know', 'at its core', 'studies show'. "
+    "Avoid dense bullet-point lists. Never mention that you are an AI or a "
+    "language model."
 )
 
 HUMANIZE_SYSTEM = (
-    "You are a ruthless editor making machine-written text read like it was typed "
-    "by a person, aiming to beat AI detectors. Rewrite the full post.\n"
+    "You are a ruthless editor whose explicit goal is to rewrite machine-written "
+    "text so it reads as human-written and defeats AI detectors. Rewrite the full "
+    "post while keeping every fact intact.\n"
     "- Vary sentence lengths dramatically and DELIBERATELY: alternate very short "
     "sentences (3-6 words) with long ones (20-30 words). Never keep a steady "
     "rhythm. Short fragments are your friend.\n"
     "- Vary paragraph lengths: make some paragraphs just 1-2 sentences, others "
     "5-6. Keep the paragraph breaks (blank lines) — do not merge paragraphs.\n"
     "- Cut formulaic AI phrases and replace them with plain, specific language. "
-    "Especially remove: 'furthermore', 'moreover', 'additionally', 'delve', "
+    "Especially: 'furthermore', 'moreover', 'additionally', 'delve', "
     "'navigate', 'landscape', 'leverage', 'in conclusion', 'at the end of the "
-    "day', 'it's important to note', 'in today's world'.\n"
+    "day', 'it's important to note', 'in today's world', 'as an AI', 'it's no "
+    "secret', 'in summary', 'everything you need to know', 'at its core', "
+    "'studies show', 'research indicates'.\n"
     "- Reduce em-dashes (—) to at most one per paragraph; replace the rest with "
     "commas, periods, or a rephrase.\n"
     "- Keep a personal, honest first-person voice with natural transitions, "
-    "concrete details, contractions, and mild imperfection.\n"
-    "- Keep every fact, the headings, structure, and topic identical. Do NOT "
-    "invent new facts, stats, or numbers.\n"
+    "contractions, and mild imperfection.\n"
+    "- FACTUALITY IS MANDATORY: preserve every fact, heading, structure, and the "
+    "topic exactly. Never add new facts, statistics, percentages, dollar figures, "
+    "attributions, citations, dates, or quotes that are not already in the given "
+    "text. If the original lacks a real number, leave it out rather than invent one.\n"
     "- No emojis, no heavy bullet lists.\n"
     "The flagged paragraphs below are the most formulaic; make those sections the "
     "most natural-sounding. Return the complete rewritten post only."
@@ -93,6 +106,58 @@ _FORMULAIC_SUBSTRINGS = [
     "empower",
     "unlock",
     "game-changer",
+    "as an ai",
+    "as a language model",
+    "it's no secret",
+    "it is no secret",
+    "in summary",
+    "in a nutshell",
+    "at its core",
+    "in the realm of",
+    "in a world where",
+    "with the rise of",
+    "everything you need to know",
+    "essential guide",
+    "ultimate guide",
+    "comprehensive guide",
+    "beginner's guide",
+    "beginners guide",
+    "step-by-step",
+    "step by step",
+    "outside the box",
+    "at the forefront",
+    "the bottom line",
+    "all in all",
+    "last but not least",
+    "boast",
+    "supercharge",
+    "revolutioniz",
+    "drive results",
+    "tailored to",
+    "getting started with",
+    "take a closer look",
+    "whether you're a beginner",
+    "if you're looking to",
+    "it's not just",
+    "more than just",
+    "rapidly evolving",
+    "fast-evolving",
+    "ever-evolving",
+    "pro tip",
+    "ins and outs",
+    "wide range of",
+    "key takeaways",
+    "stand as a testament",
+    "stands as a testament",
+    "testament to",
+    "streamlined",
+    "sustainable growth",
+    "harness",
+    "unleash",
+    "transformation journey",
+    "navigating the",
+    "in the modern era",
+    "modern world",
 ]
 
 
@@ -112,6 +177,82 @@ def detector_hints(text):
         if cv < 0.5:
             hints.append("sentence rhythm too uniform")
     return "; ".join(hints) or "none detected"
+
+
+# Patterns that, when introduced into content, are unsupported fabrications the
+# writer had no basis for: percentages, currency/count figures, dates, and
+# unattributed claims ("studies show", "experts say", "a recent report").
+_FABRICATED_PATTERNS = [
+    re.compile(r"\b\d{1,3}(?:[.,]\d{3})*\s?%|\b\d{1,3}(?:[.,]\d{3})*\s+percent\b", re.IGNORECASE),
+    re.compile(r"[$£€₹]\s?\d+(?:[.,]\d+)?\s?(k|m|b|million|billion|thousand)?\b", re.IGNORECASE),
+    re.compile(r"\b\d[\d,]*\+(?:\s?users|\s?customers|\s?downloads|\s?people|\s?readers)?\b", re.IGNORECASE),
+    re.compile(r"\b(?:\d{1,2}\s)?(?:january|february|march|april|may|june|july|august|september|october|november|december)\s\d{4}\b", re.IGNORECASE),
+    re.compile(r"((?:across|according to)\s+)?(\d[\d,]*)\s(?:studies?|reports?|surveys?|respondents?)", re.IGNORECASE),
+    re.compile(r"\b(?:studies? show|research shows|research indicates|experts say|a recent (?:study|report|survey)|the data shows)\b", re.IGNORECASE),
+]
+
+
+_FABRICATED_PATTERN = re.compile(
+    "|".join(p.pattern for p in _FABRICATED_PATTERNS),
+    re.IGNORECASE,
+)
+
+
+def _whitelisted(fragment, base):
+    """Return True if the fabrication-like fragment already exists verbatim in the
+    ground truth (previous draft / topic), i.e. it is real given information."""
+    frag = fragment.strip().lower()
+    if len(frag) <= 2:
+        return True  # too short/vague to be a fabricated claim
+    return frag in (base or "").lower()
+
+
+_PERSONAL_VOICE = re.compile(r"\b(?:my|i|we|our)\b", re.IGNORECASE)
+
+
+def strip_invented_facts(text, base):
+    """Remove sentences that introduce an unsupported statistic, figure, date, or
+    attribution and show no sign of a real given fact. Ground truth is `base` (the
+    previous draft plus original topic), so real numbers already present are never
+    touched. Returns (cleaned_text, removed_count, removed_fragments)."""
+    sentences = re.split(r"(?<=[.!?])\s+", text or "")
+    removed = 0
+    frags = []
+    kept = []
+    for sent in sentences:
+        low = sent.lower()
+        m = _FABRICATED_PATTERN.search(low)
+        if not m:
+            kept.append(sent)
+            continue
+        frag = m.group(0)
+        if _whitelisted(frag, base):
+            kept.append(sent)
+            continue
+        # The sentence introduces a figure with no basis in the draft/topic.
+        removed += 1
+        frags.append(frag)
+        # For first-person, opinion-led sentences, strip only the fabricated
+        # fragment (and surrounding filler) so we don't lose the author's point.
+        # Otherwise drop the whole sentence to avoid a dangling unsourced claim.
+        cleaned = _FABRICATED_PATTERN.sub(" ", sent).strip()
+        cleaned = re.sub(r"\s{2,}", " ", cleaned)
+        if _PERSONAL_VOICE.search(low) and _has_content(cleaned):
+            kept.append(_trim_around_stat(cleaned))
+    return " ".join(kept).strip(), removed, frags
+
+
+def _has_content(s):
+    words = re.findall(r"[a-z0-9]+", s.lower())
+    return any(w not in _FILLER for w in words)
+
+
+_FILLER = set("the a an of on in to this is it was were by with for and or but at from been has have had".split())
+
+
+def _trim_around_stat(s):
+    # Collapse "In we pivoted."-style artifacts left after removing a figure.
+    return re.sub(r"\s+(?:in|on|by|at|of|for)\s*$", "", s).strip()
 
 
 def cleanup_stale_posts():
@@ -164,6 +305,14 @@ def run_pipeline(post_id, topic, options=None):
         draft = complete_with_failover(
             DRAFT_SYSTEM, f"Topic: {topic}", temperature=temperature, max_tokens=max_tokens
         )
+        draft, removed_draft, draft_frags = strip_invented_facts(draft, topic)
+        if removed_draft:
+            logger.warning(
+                "post %s | stripped %d invented figure(s) from draft: %s",
+                post_id,
+                removed_draft,
+                ", ".join(draft_frags[:5]),
+            )
         logger.info("post %s | stage=draft done (%d chars)", post_id, len(draft))
 
         current = draft
@@ -171,6 +320,17 @@ def run_pipeline(post_id, topic, options=None):
         for rewrite_count in range(max_iterations + 1):
             _set_status(post_id, "generating", stage="evaluating")
             res = detector.score_text(current)
+            if hasattr(detector, "unscored_texts"):
+                unscored = detector.unscored_texts()
+                if unscored:
+                    logger.warning(
+                        "post %s | %d paragraphs have no %s score (mock fallback used). "
+                        "Score them: python -m tools.colab_export --post %s",
+                        post_id,
+                        len(unscored),
+                        res.detector,
+                        post_id,
+                    )
             revisions.append((rewrite_count, current, res))
             logger.info(
                 "post %s | eval round=%d overall=%.3f threshold=%.3f",
@@ -211,6 +371,16 @@ def run_pipeline(post_id, topic, options=None):
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
+            # Anti-fabrication guard: strip any invented stat/figure/attribution
+            # the rewrite introduced that we have no basis for.
+            new, removed_fabs, fab_frags = strip_invented_facts(new, f"{topic}\n\n{current}")
+            if removed_fabs:
+                logger.warning(
+                    "post %s | stripped %d invented figure(s): %s",
+                    post_id,
+                    removed_fabs,
+                    ", ".join(fab_frags[:5]),
+                )
             if not new or new == current:
                 logger.info("post %s | humanize produced no change, stopping", post_id)
                 break

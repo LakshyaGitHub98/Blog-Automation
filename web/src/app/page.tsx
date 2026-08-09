@@ -143,12 +143,16 @@ function GenerateForm() {
               <Slider
                 id="iterations"
                 min={0}
-                max={4}
+                max={10}
                 step={1}
                 value={[maxIterations]}
                 onValueChange={(v) => setMaxIterations(v[0])}
                 disabled={busy}
               />
+              <p className="text-xs text-muted-foreground">
+                More passes = stronger de-AI signal, but slower. Backend allows up
+                to 10.
+              </p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="temperature">
